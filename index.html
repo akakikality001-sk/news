@@ -179,21 +179,29 @@
   }
 
   function fitToParent() {
-    const wrap = document.getElementById("wrap");
-    wrap.style.transform = "";
-    wrap.style.width = "";
-    const parentH = window.innerHeight;
-    const contentH = wrap.scrollHeight;
-    if (contentH > parentH && contentH > 0) {
-      const scale = parentH / contentH;
-      wrap.style.transformOrigin = "top left";
-      wrap.style.transform = `scale(${scale})`;
-      wrap.style.width = (100 / scale) + "%";
-    }
-    try {
-      parent.postMessage({ type: "news-height", height: Math.ceil(document.body.scrollHeight) }, "*");
-    } catch(e){}
+  const wrap = document.getElementById("wrap");
+  wrap.style.transform = "";
+  wrap.style.width = "";
+
+  const parentH = window.innerHeight;
+  const contentH = wrap.scrollHeight;
+  if (!contentH || !parentH) return;
+
+  // Only shrink if needed, and never below 75%
+  let scale = parentH / contentH;
+  if (scale > 1) scale = 1;       // don't enlarge
+  if (scale < 0.75) scale = 0.75; // don't shrink too far
+
+  if (scale < 1) {
+    wrap.style.transformOrigin = "top left";
+    wrap.style.transform = `scale(${scale})`;
+    wrap.style.width = (100 / scale) + "%";
   }
+
+  try {
+    parent.postMessage({ type: "news-height", height: Math.ceil(document.body.scrollHeight) }, "*");
+  } catch(e){}
+}
 
   window.addEventListener("resize", fitToParent);
 
