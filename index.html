@@ -4,24 +4,84 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  html, body { margin:0; padding:0; background:transparent; overflow:hidden; }
-  #frame { width:100%; border:0; display:block; height:200px; overflow:hidden; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; background:transparent; font-family: system-ui, -apple-system, Arial, sans-serif; }
+  .wrap { padding: 12px; color:#202124; }
+  .heading { font-size: 20px; font-weight: 700; margin: 0 0 8px; line-height: 1.25; }
+  .text { font-size: 14px; line-height: 1.5; margin: 0 0 10px; white-space: pre-wrap; word-wrap: break-word; }
+  .media img, .media video { width: 100%; height: auto; display:block; border-radius: 8px; }
+  .empty { color:#888; font-size: 13px; text-align:center; padding: 16px 0; }
+  .loading { color:#aaa; font-size:13px; text-align:center; padding:16px 0; }
 </style>
 </head>
 <body>
-  <iframe id="frame"
-    src="https://script.google.com/macros/s/AKfycbx06B5POhaw26VYMiCSzloTiX8goe-ysaokKbJAe0fWIgiYW0zekI9UcxNsxd-vEVrNvw/exec?page=public"
-    scrolling="no"
-    allow="autoplay; fullscreen"
-    referrerpolicy="no-referrer">
-  </iframe>
+  <div class="wrap" id="wrap"><div class="loading">Loading…</div></div>
 
   <script>
-    window.addEventListener("message", e => {
-      if (e.data && e.data.type === "news-height") {
-        document.getElementById("frame").style.height = (e.data.height + 4) + "px";
+    const API = "https://script.google.com/macros/s/AKfycbx06B5POhaw26VYMiCSzloTiX8goe-ysaokKbJAe0fWIgiYW0zekI9UcxNsxd-vEVrNvw/exec";
+
+    function reportHeight() {
+      const h = Math.ceil(document.body.scrollHeight);
+      try { parent.postMessage({ type: "news-height", height: h }, "*"); } catch(e){}
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    function renderPost(post) {
+      const wrap = document.getElementById("wrap");
+      if (!post || (!post.heading && !post.text && !post.mediaId)) {
+        wrap.innerHTML = '<div class="empty">No news yet.</div>';
+        reportHeight();
+        return;
       }
-    });
+      let html = "";
+      if (post.heading) html += `<div class="heading">${escapeHtml(post.heading)}</div>`;
+      if (post.text)    html += `<div class="text">${escapeHtml(post.text)}</div>`;
+      wrap.innerHTML = html;
+
+      if (post.mediaId) {
+        // Fetch media through Apps Script as base64 → data URL
+        fetch(API + "?action=media&id=" + encodeURIComponent(post.mediaId))
+          .then(r => r.text())
+          .then(b64 => {
+            // We don't know mime here; infer from mediaType field
+            const mime = post.mediaType === "image" ? "image/jpeg"
+                       : post.mediaType === "video" ? "video/mp4"
+                       : "application/octet-stream";
+            const dataUrl = `data:${mime};base64,${b64}`;
+
+            if (post.mediaType === "image") {
+              wrap.insertAdjacentHTML("beforeend",
+                `<div class="media"><img src="${dataUrl}" alt=""></div>`);
+            } else if (post.mediaType === "video") {
+              wrap.insertAdjacentHTML("beforeend",
+                `<div class="media"><video src="${dataUrl}" controls playsinline></video></div>`);
+            } else {
+              wrap.insertAdjacentHTML("beforeend",
+                `<div class="media"><a href="${dataUrl}" download="${post.mediaName || 'file'}">Download attachment</a></div>`);
+            }
+            const m = wrap.querySelector("img, video");
+            if (m) m.addEventListener("load loadedmetadata", reportHeight);
+            reportHeight();
+          })
+          .catch(() => { reportHeight(); });
+      }
+      reportHeight();
+    }
+
+    fetch(API + "?action=get")
+      .then(r => r.json())
+      .then(renderPost)
+      .catch(err => {
+        document.getElementById("wrap").innerHTML =
+          '<div class="empty">Unable to load news.</div>';
+        reportHeight();
+      });
+
+    window.addEventListener("resize", reportHeight);
+    new ResizeObserver(reportHeight).observe(document.body);
   </script>
 </body>
 </html>
