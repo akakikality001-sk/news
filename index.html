@@ -5,83 +5,204 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   * { box-sizing: border-box; }
-  html, body { margin:0; padding:0; background:transparent; font-family: system-ui, -apple-system, Arial, sans-serif; }
-  .wrap { padding: 12px; color:#202124; }
-  .heading { font-size: 20px; font-weight: 700; margin: 0 0 8px; line-height: 1.25; }
-  .text { font-size: 14px; line-height: 1.5; margin: 0 0 10px; white-space: pre-wrap; word-wrap: break-word; }
-  .media img, .media video { width: 100%; height: auto; display:block; border-radius: 8px; }
-  .empty { color:#888; font-size: 13px; text-align:center; padding: 16px 0; }
-  .loading { color:#aaa; font-size:13px; text-align:center; padding:16px 0; }
+  html, body {
+    margin: 0; padding: 0;
+    background: transparent;
+    overflow: hidden;
+    height: 100%;
+    font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  }
+  .wrap {
+    padding: 14px;
+    height: 100%;
+    overflow: hidden;
+    color: #1f2937;
+    background: linear-gradient(135deg, #fdf2f8 0%, #eef2ff 100%);
+    border-radius: 14px;
+    transform-origin: top left;
+  }
+  .heading {
+    font-size: 20px;
+    font-weight: 800;
+    margin: 0 0 8px;
+    line-height: 1.25;
+    background: linear-gradient(90deg,#667eea,#f5576c);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .text {
+    font-size: 14px;
+    line-height: 1.55;
+    margin: 0 0 12px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow: hidden;
+    color: #374151;
+  }
+  .gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 8px;
+    margin-top: 6px;
+  }
+  .gallery .item {
+    border-radius: 10px;
+    overflow: hidden;
+    background: #fff;
+    box-shadow: 0 3px 10px rgba(102,126,234,0.18);
+    aspect-ratio: 1;
+    cursor: pointer;
+    transition: transform .12s, box-shadow .12s;
+  }
+  .gallery .item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(102,126,234,0.35);
+  }
+  .gallery img, .gallery video {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+  }
+  .empty, .loading {
+    color: #6b7280;
+    font-size: 13px;
+    text-align: center;
+    padding: 24px 0;
+  }
+  /* Fullscreen lightbox */
+  .lightbox {
+    position: fixed;
+    inset: 0;
+    background: rgba(15,23,42,0.9);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 20px;
+  }
+  .lightbox.open { display: flex; }
+  .lightbox img, .lightbox video {
+    max-width: 95vw; max-height: 95vh; border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  .lightbox .close {
+    position: absolute; top: 16px; right: 20px;
+    background: #fff; color: #111; border: 0; border-radius: 50%;
+    width: 36px; height: 36px; font-size: 20px; cursor: pointer; line-height: 34px; padding: 0;
+  }
 </style>
 </head>
 <body>
   <div class="wrap" id="wrap"><div class="loading">Loading…</div></div>
+  <div class="lightbox" id="lightbox"><button class="close" id="close">×</button></div>
 
-  <script>
-    const API = "https://script.google.com/macros/s/AKfycbzOHmTwFU-YNiz_vWDXX9T4HeEzugcv4TR1rxJoiu0UyxOvnYGq2qo1i-B2l7iUjZeA8w/exec";
+<script>
+  const API = "https://script.google.com/macros/s/AKfycbx06B5POhaw26VYMiCSzloTiX8goe-ysaokKbJAe0fWIgiYW0zekI9UcxNsxd-vEVrNvw/exec";
 
-    function reportHeight() {
-      const h = Math.ceil(document.body.scrollHeight);
-      try { parent.postMessage({ type: "news-height", height: h }, "*"); } catch(e){}
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function dataUrlFor(mime, b64) {
+    return `data:${mime || "application/octet-stream"};base64,${b64}`;
+  }
+
+  function renderPost(post) {
+    const wrap = document.getElementById("wrap");
+
+    if (!post || (!post.heading && !post.text && (!post.media || !post.media.length))) {
+      wrap.innerHTML = '<div class="empty">No news yet.</div>';
+      fitToParent();
+      return;
     }
 
-    function escapeHtml(s) {
-      return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    let html = "";
+    if (post.heading) html += `<div class="heading">${escapeHtml(post.heading)}</div>`;
+    if (post.text)    html += `<div class="text">${escapeHtml(post.text)}</div>`;
+
+    if (post.media && post.media.length) {
+      html += `<div class="gallery" id="gallery"></div>`;
     }
 
-    function renderPost(post) {
-      const wrap = document.getElementById("wrap");
-      if (!post || (!post.heading && !post.text && !post.mediaId)) {
-        wrap.innerHTML = '<div class="empty">No news yet.</div>';
-        reportHeight();
-        return;
-      }
-      let html = "";
-      if (post.heading) html += `<div class="heading">${escapeHtml(post.heading)}</div>`;
-      if (post.text)    html += `<div class="text">${escapeHtml(post.text)}</div>`;
-      wrap.innerHTML = html;
+    wrap.innerHTML = html;
 
-      if (post.mediaId) {
-        // Fetch media through Apps Script as base64 → data URL
-        fetch(API + "?action=media&id=" + encodeURIComponent(post.mediaId))
-          .then(r => r.text())
-          .then(b64 => {
-            // We don't know mime here; infer from mediaType field
-            const mime = post.mediaType === "image" ? "image/jpeg"
-                       : post.mediaType === "video" ? "video/mp4"
-                       : "application/octet-stream";
-            const dataUrl = `data:${mime};base64,${b64}`;
+    if (!post.media || !post.media.length) { fitToParent(); return; }
 
-            if (post.mediaType === "image") {
-              wrap.insertAdjacentHTML("beforeend",
-                `<div class="media"><img src="${dataUrl}" alt=""></div>`);
-            } else if (post.mediaType === "video") {
-              wrap.insertAdjacentHTML("beforeend",
-                `<div class="media"><video src="${dataUrl}" controls playsinline></video></div>`);
-            } else {
-              wrap.insertAdjacentHTML("beforeend",
-                `<div class="media"><a href="${dataUrl}" download="${post.mediaName || 'file'}">Download attachment</a></div>`);
-            }
-            const m = wrap.querySelector("img, video");
-            if (m) m.addEventListener("load loadedmetadata", reportHeight);
-            reportHeight();
-          })
-          .catch(() => { reportHeight(); });
-      }
-      reportHeight();
+    const gallery = document.getElementById("gallery");
+    let loaded = 0;
+    const total = post.media.length;
+
+    post.media.forEach((m, i) => {
+      // Fetch each file's base64 via Apps Script
+      fetch(API + "?action=media&id=" + encodeURIComponent(m.id))
+        .then(r => r.text())
+        .then(b64 => {
+          const url = dataUrlFor(m.mime, b64);
+          const item = document.createElement("div");
+          item.className = "item";
+          if (m.type === "image") {
+            item.innerHTML = `<img src="${url}" alt="${escapeHtml(m.name||"")}">`;
+          } else if (m.type === "video") {
+            item.innerHTML = `<video src="${url}" muted playsinline></video>`;
+          } else {
+            item.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:12px;color:#6b7280;padding:8px;text-align:center">${escapeHtml(m.name||"file")}</div>`;
+          }
+          item.onclick = () => openLightbox(url, m.type);
+          gallery.appendChild(item);
+          if (++loaded === total) fitToParent();
+        })
+        .catch(() => { if (++loaded === total) fitToParent(); });
+    });
+
+    fitToParent();
+  }
+
+  function openLightbox(url, type) {
+    const lb = document.getElementById("lightbox");
+    // Keep the close button, replace the media
+    const closeBtn = document.getElementById("close");
+    lb.innerHTML = "";
+    lb.appendChild(closeBtn);
+    const el = document.createElement(type === "video" ? "video" : "img");
+    el.src = url;
+    if (type === "video") { el.controls = true; el.autoplay = true; }
+    lb.appendChild(el);
+    lb.classList.add("open");
+  }
+
+  document.getElementById("close").onclick = () => {
+    document.getElementById("lightbox").classList.remove("open");
+    document.getElementById("lightbox").innerHTML = '<button class="close" id="close">×</button>';
+    document.getElementById("close").onclick = arguments.callee;
+  };
+
+  /* --- Scale-to-fit so the Site embed never scrolls --- */
+  function fitToParent() {
+    const wrap = document.getElementById("wrap");
+    wrap.style.transform = "";
+    wrap.style.width = "";
+    const parentH = window.innerHeight;
+    const contentH = wrap.scrollHeight;
+    if (contentH > parentH && contentH > 0) {
+      const scale = parentH / contentH;
+      wrap.style.transformOrigin = "top left";
+      wrap.style.transform = `scale(${scale})`;
+      wrap.style.width = (100 / scale) + "%";
     }
+    // tell Sites our height too (harmless if ignored)
+    try {
+      parent.postMessage({ type: "news-height", height: Math.ceil(document.body.scrollHeight) }, "*");
+    } catch(e){}
+  }
 
-    fetch(API + "?action=get")
-      .then(r => r.json())
-      .then(renderPost)
-      .catch(err => {
-        document.getElementById("wrap").innerHTML =
-          '<div class="empty">Unable to load news.</div>';
-        reportHeight();
-      });
+  window.addEventListener("resize", fitToParent);
 
-    window.addEventListener("resize", reportHeight);
-    new ResizeObserver(reportHeight).observe(document.body);
-  </script>
+  fetch(API + "?action=get")
+    .then(r => r.json())
+    .then(renderPost)
+    .catch(() => {
+      document.getElementById("wrap").innerHTML = '<div class="empty">Unable to load news.</div>';
+      fitToParent();
+    });
+</script>
 </body>
 </html>
