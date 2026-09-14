@@ -5,42 +5,205 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>News</title>
 <style>
+  * { box-sizing: border-box; }
   html, body {
-    margin: 0;
-    padding: 0;
+    margin: 0; padding: 0;
     background: transparent;
-    height: 100%;
-    overflow: hidden;
+    font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+    color: #1f2937;
   }
-  #frame {
-    width: 100%;
-    border: 0;
-    display: block;
-    height: 900px;            /* initial; will be overridden */
-    min-height: 500px;
-    overflow: auto;
-    -webkit-overflow-scrolling: touch;
-    background: transparent;
+  .wrap {
+    padding: 14px;
+    background: linear-gradient(135deg, #fdf2f8 0%, #eef2ff 100%);
+    border-radius: 14px;
+  }
+  .post {
+    background: #fff;
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 12px;
+    box-shadow: 0 4px 14px rgba(102,126,234,0.12);
+    border-left: 5px solid #667eea;
+    animation: fadeUp .3s ease both;
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .heading {
+    font-size: 20px;
+    font-weight: 800;
+    margin: 0 0 6px;
+    line-height: 1.25;
+    background: linear-gradient(90deg,#667eea,#f5576c);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .meta { font-size: 12px; color: #9ca3af; margin-bottom: 8px; }
+  .text {
+    font-size: 16px;
+    line-height: 1.6;
+    margin: 0 0 10px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    color: #374151;
+  }
+  .gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 8px;
+  }
+  .gallery .item {
+    border-radius: 10px; overflow: hidden;
+    background: #f3f4f6; aspect-ratio: 1;
+    box-shadow: 0 3px 10px rgba(102,126,234,0.18);
+    cursor: pointer;
+    transition: transform .12s, box-shadow .12s;
+  }
+  .gallery .item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(102,126,234,0.35);
+  }
+  .gallery img, .gallery video {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+  }
+  .empty, .loading {
+    color: #6b7280; font-size: 14px; text-align: center; padding: 24px 0;
+  }
+  .lightbox {
+    position: fixed; inset: 0;
+    background: rgba(15,23,42,0.9);
+    display: none; align-items: center; justify-content: center;
+    z-index: 9999; padding: 20px;
+  }
+  .lightbox.open { display: flex; }
+  .lightbox img, .lightbox video {
+    max-width: 95vw; max-height: 95vh; border-radius: 12px;
+  }
+  .lightbox .close {
+    position: absolute; top: 16px; right: 20px;
+    background: #fff; color: #111; border: 0; border-radius: 50%;
+    width: 36px; height: 36px; font-size: 20px; cursor: pointer;
+    line-height: 34px; padding: 0;
+  }
+  @media (max-width: 480px) {
+    .wrap { padding: 12px; }
+    .heading { font-size: 22px; }
+    .text { font-size: 16px; line-height: 1.65; }
+    .gallery { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); }
   }
 </style>
 </head>
 <body>
-  <iframe
-    id="frame"
-    src="https://script.google.com/macros/s/AKfycbyqsz1HYdn68GcCstUkHWg6J63zsx9qPpW6al9YpfZM74pe62SMn8PxCsp6O0SW7ZdDDA/exec"
-    scrolling="yes"
-    allow="autoplay; fullscreen"
-    referrerpolicy="no-referrer">
-  </iframe>
+  <div class="wrap" id="wrap"><div class="loading">Loading…</div></div>
+  <div class="lightbox" id="lightbox"></div>
 
-  <script>
-    window.addEventListener("message", function (e) {
-      if (e.data && e.data.type === "news-height") {
-        var f = document.getElementById("frame");
-        var newHeight = Math.max(500, e.data.height + 4);
-        f.style.height = newHeight + "px";
-      }
+<script>
+  var API = "https://script.google.com/macros/s/AKfycbyqsz1HYdn68GcCstUkHWg6J63zsx9qPpW6al9YpfZM74pe62SMn8PxCsp6O0SW7ZdDDA/exec";
+  var MEDIA_CACHE = {};
+
+  function escapeHtml(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c];
     });
-  </script>
+  }
+  function fmtDate(iso) {
+    try {
+      var d = new Date(iso);
+      return d.toLocaleDateString(undefined, {year:"numeric",month:"short",day:"numeric"}) +
+             " · " +
+             d.toLocaleTimeString(undefined, {hour:"2-digit",minute:"2-digit"});
+    } catch (e) { return ""; }
+  }
+
+  function renderPosts(posts) {
+    var wrap = document.getElementById("wrap");
+    if (!Array.isArray(posts) || !posts.length) {
+      wrap.innerHTML = '<div class="empty">No news yet.</div>';
+      reportHeight();
+      return;
+    }
+    var html = "";
+    posts.forEach(function (p) {
+      var heading = p.heading ? '<div class="heading">' + escapeHtml(p.heading) + '</div>' : "";
+      var meta    = p.created ? '<div class="meta">' + fmtDate(p.created) + '</div>' : "";
+      var text    = p.text    ? '<div class="text">' + escapeHtml(p.text) + '</div>' : "";
+      var gallery = (p.media && p.media.length)
+        ? '<div class="gallery" data-post="' + p.id + '"></div>' : "";
+      html += '<div class="post">' + heading + meta + text + gallery + '</div>';
+    });
+    wrap.innerHTML = html;
+
+    posts.forEach(function (p) {
+      if (!p.media || !p.media.length) return;
+      var gallery = wrap.querySelector('.gallery[data-post="' + p.id + '"]');
+      if (!gallery) return;
+      p.media.forEach(function (m) {
+        fetchMedia(m.id, m.mime).then(function (url) {
+          var item = document.createElement("div");
+          item.className = "item";
+          if (m.type === "image") {
+            item.innerHTML = '<img src="' + url + '" alt="" loading="lazy">';
+          } else if (m.type === "video") {
+            item.innerHTML = '<video src="' + url + '" muted playsinline preload="metadata"></video>';
+          } else {
+            item.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:11px;color:#6b7280;padding:8px;text-align:center">' +
+                             escapeHtml(m.name || "file") + '</div>';
+          }
+          item.onclick = function () { openLightbox(url, m.type); };
+          gallery.appendChild(item);
+          reportHeight();
+        }).catch(function () {});
+      });
+    });
+    reportHeight();
+  }
+
+  function fetchMedia(id, mime) {
+    if (MEDIA_CACHE[id]) return Promise.resolve(MEDIA_CACHE[id]);
+    return fetch(API + "?action=media&id=" + encodeURIComponent(id))
+      .then(function (r) { return r.text(); })
+      .then(function (b64) {
+        var url = "data:" + (mime || "application/octet-stream") + ";base64," + b64;
+        MEDIA_CACHE[id] = url;
+        return url;
+      });
+  }
+
+  function openLightbox(url, type) {
+    var lb = document.getElementById("lightbox");
+    lb.innerHTML = '<button class="close">&times;</button>';
+    var el = document.createElement(type === "video" ? "video" : "img");
+    el.src = url;
+    if (type === "video") { el.controls = true; el.autoplay = true; }
+    lb.appendChild(el);
+    lb.classList.add("open");
+    lb.querySelector(".close").onclick = function () { lb.classList.remove("open"); };
+    lb.onclick = function (e) { if (e.target === lb) lb.classList.remove("open"); };
+  }
+
+  function reportHeight() {
+    try {
+      parent.postMessage(
+        { type: "news-height", height: Math.ceil(document.body.scrollHeight) },
+        "*"
+      );
+    } catch (e) {}
+  }
+  window.addEventListener("resize", reportHeight);
+  if (window.ResizeObserver) {
+    new ResizeObserver(reportHeight).observe(document.body);
+  }
+
+  fetch(API + "?action=get")
+    .then(function (r) { return r.json(); })
+    .then(renderPosts)
+    .catch(function () {
+      document.getElementById("wrap").innerHTML =
+        '<div class="empty">Unable to load news.</div>';
+      reportHeight();
+    });
+</script>
 </body>
 </html>
